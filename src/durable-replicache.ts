@@ -1,7 +1,7 @@
 import { StoreImpl as KVStore } from "./kv";
 import { Store as DAGStore } from "./replicache/src/dag/store";
 import { Map as ProllyMap } from "./replicache/src/prolly/map";
-import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, setLastMutationID } from "./commit";
+import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, pushHistory, setLastMutationID } from "./commit";
 //import { MutatorDefs } from "./replicache/src/replicache";
 import { WriteTransaction } from "./replicache/src/transactions";
 import { Read } from "./replicache/src/dag/read";
@@ -36,7 +36,7 @@ export class DurableReplicache {
     try {
       return await this._store.withWrite(async (tx) => {
         const read = tx.read();
-        let mainHash = await read.getHead("main");
+        let mainHash = (await read.getHead("main")) ?? null;
         const commit = await (mainHash ? loadCommit(read, mainHash) : initChain(tx));
 
         // Apply requested action.
@@ -44,9 +44,9 @@ export class DurableReplicache {
           let url = new URL(request.url);
           switch (url.pathname) {
             case "/replicache-pull":
-              return await pull(commit, read, request);
+              return await pull(commit, mainHash, request);
             case "/replicache-push":
-              return await push(commit, tx, request);
+              return await push(commit, mainHash, request);
           }
           return new Response("ok");
         } finally {
@@ -101,7 +101,7 @@ class WriteTransactionImpl implements WriteTransaction {
   }
 }
 
-async function push(commit: LoadedCommit, write: Write, request: Request): Promise<Response> {
+async function push(commit: LoadedCommit, headHash: string|null, request: Request): Promise<Response> {
   const pushRequest = (await request.json()) as PushRequest; // TODO: validate
   let lastMutationID = await getLastMutationID(commit, pushRequest.clientID);
 
@@ -134,14 +134,18 @@ async function push(commit: LoadedCommit, write: Write, request: Request): Promi
 
   await setLastMutationID(commit, pushRequest.clientID, lastMutationID);
 
+  if (headHash !== null) {
+    await pushHistory(commit, headHash);
+  }
+
   return new Response("OK");
 }
 
-async function pull(commit: LoadedCommit, read: Read, request: Request): Promise<Response> {
+async function pull(commit: LoadedCommit, headHash: string|null, request: Request): Promise<Response> {
   const pullRequest = (await request.json()) as PullRequest; // TODO: validate
   const lastMutationID = await getLastMutationID(commit, pullRequest.clientID);
   const pullResonse: PullResponse = {
-    cookie: null,
+    cookie: headHash,
     lastMutationID,
     patch: [
       { op: "clear" as const },

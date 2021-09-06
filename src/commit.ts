@@ -4,6 +4,8 @@ import { deepThaw, JSONValue, ReadonlyJSONValue } from "./replicache/src/json"
 import { Chunk } from "./replicache/src/dag/chunk";
 import { Read } from "./replicache/src/dag/read";
 
+const MAX_HISTORY_ENTRIES = 50;
+
 export type LoadedCommit = {
   data: CommitData;
   userData: ProllyMap;
@@ -19,7 +21,7 @@ type CommitData = {
   operation: Init | Mutation;  // maybe also pull if that can add data?
   userDataHash: string;
   clientsHash: string;
-  historyHash: string;
+  historyData: string[];
 }
 
 type Mutation = {
@@ -31,6 +33,13 @@ type Mutation = {
 
 type Init = {
   type: "init";
+}
+
+export async function pushHistory(commit: LoadedCommit, prevCommitHash: string) {
+  commit.data.historyData.push(prevCommitHash);
+  if (commit.data.historyData.length > MAX_HISTORY_ENTRIES) {
+    commit.data.historyData = commit.data.historyData.slice(commit.data.historyData.length - MAX_HISTORY_ENTRIES);
+  }
 }
 
 export async function getLastMutationID(commit: LoadedCommit, clientID: string) {
@@ -54,7 +63,9 @@ export async function setLastMutationID(commit: LoadedCommit, clientID: string, 
 export async function flushCommit(write: Write, commit: LoadedCommit): Promise<void> {
   commit.data.userDataHash = await commit.userData.flush(write);
   commit.data.clientsHash = await commit.clientData.flush(write);
-  const chunk = await Chunk.new(commit.data, [...new Set([commit.data.userDataHash, commit.data.clientsHash, commit.data.historyHash])]);
+  const chunk = await Chunk.new(commit.data,
+    [...new Set(
+      [commit.data.userDataHash, commit.data.clientsHash, ...commit.data.historyData])]);
   await write.putChunk(chunk);
   await write.setHead("main", chunk.hash);
 }
@@ -63,8 +74,8 @@ export async function loadCommit(read: Read, hash: string): Promise<LoadedCommit
   const cd = await readCommit(read, hash);
   return {
     data: cd,
-    clientData: await ProllyMap.load(cd.clientsHash, read),
     userData: await ProllyMap.load(cd.userDataHash, read),
+    clientData: await ProllyMap.load(cd.clientsHash, read),
   };
 }
 
@@ -84,13 +95,13 @@ export async function initChain(write: Write) {
     operation: { type: "init" },
     userDataHash: emptyMapHash,
     clientsHash: emptyMapHash,
-    historyHash: emptyMapHash,
+    historyData: [],
   };
   await write.putChunk(await Chunk.new(commit, [emptyMapHash]));
   const loaded: LoadedCommit = {
     data: commit,
-    clientData: map,
-    userData: ProllyMap.new(),
-  }
+    userData: map,
+    clientData: ProllyMap.new(),
+  };
   return loaded;
 }

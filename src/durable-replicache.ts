@@ -2,16 +2,13 @@ import { StoreImpl as KVStore } from "./kv";
 import { Store as DAGStore } from "./replicache/src/dag/store";
 import { Map as ProllyMap } from "./replicache/src/prolly/map";
 import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, pushHistory, readCommit, setLastMutationID } from "./commit";
-//import { MutatorDefs } from "./replicache/src/replicache";
 import { WriteTransaction } from "./replicache/src/transactions";
 import { Read } from "./replicache/src/dag/read";
 import { PullResponse } from "./replicache/src/puller";
 import { deepThaw, JSONValue } from "./replicache/src/json";
 import { PushRequest } from "./replicache/src/sync/push";
-import { Write } from "./replicache/src/dag/write";
 import { ScanResult } from "./replicache/src/scan-iterator";
 import { PullRequest } from "./replicache/src/sync/pull";
-//import { ScanOptions, KeyTypeForScanOptions } from "./replicache/src/scan-options";
 
 const mutators = {
   "put": async (tx: WriteTransaction, args: {key: string, value: string}) => {

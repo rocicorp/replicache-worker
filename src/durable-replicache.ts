@@ -27,14 +27,16 @@ const mutators = {
 
 export class DurableReplicache {
   _store: DAGStore;
+  _inited: Promise<unknown>;
 
   constructor(state: DurableObjectState, env: Env) {
     this._store = new DAGStore(new KVStore(state));
-    state.waitUntil(initHasher());
+    this._inited = initHasher();
   }
 
   // Handle HTTP requests from clients.
   async fetch(request: Request) {
+    await this._inited;
     try {
       return await this._store.withWrite(async (tx) => {
         const read = tx.read();

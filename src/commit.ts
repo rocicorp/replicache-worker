@@ -70,8 +70,11 @@ export async function flushCommit(write: Write, commit: LoadedCommit): Promise<v
   await write.setHead("main", chunk.hash);
 }
 
-export async function loadCommit(read: Read, hash: string): Promise<LoadedCommit> {
+export async function loadCommit(read: Read, hash: string): Promise<LoadedCommit|null> {
   const cd = await readCommit(read, hash);
+  if (!cd) {
+    return null;
+  }
   return {
     data: cd,
     userData: await ProllyMap.load(cd.userDataHash, read),
@@ -79,10 +82,10 @@ export async function loadCommit(read: Read, hash: string): Promise<LoadedCommit
   };
 }
 
-export async function readCommit(read: Read, hash: string): Promise<CommitData> {
+export async function readCommit(read: Read, hash: string): Promise<CommitData|null> {
   const chunk = await read.getChunk(hash);
   if (!chunk) {
-    throw new Error(`chunk ${hash} not found`);
+    return null;
   }
   return chunk.data as CommitData;
 }

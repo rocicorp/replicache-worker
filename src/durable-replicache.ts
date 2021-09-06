@@ -1,27 +1,22 @@
 import { StoreImpl as KVStore } from "./kv";
 import { Store as DAGStore } from "./replicache/src/dag/store";
 import { Map as ProllyMap } from "./replicache/src/prolly/map";
-import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, pushHistory, setLastMutationID } from "./commit";
-//import { MutatorDefs } from "./replicache/src/replicache";
+import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, pushHistory, readCommit, setLastMutationID } from "./commit";
 import { WriteTransaction } from "./replicache/src/transactions";
 import { Read } from "./replicache/src/dag/read";
 import { PullResponse } from "./replicache/src/puller";
 import { deepThaw, JSONValue } from "./replicache/src/json";
 import { PushRequest } from "./replicache/src/sync/push";
-import { Write } from "./replicache/src/dag/write";
 import { ScanResult } from "./replicache/src/scan-iterator";
 import { PullRequest } from "./replicache/src/sync/pull";
-//import { ScanOptions, KeyTypeForScanOptions } from "./replicache/src/scan-options";
 
 const mutators = {
-  "increment": async (tx: WriteTransaction, delta: number) => {
-    const prev = ((await tx.get("counter")) ?? 0 ) as number;
-    if (delta === 0) {
-      return prev;
-    }
-    const next = prev + delta;
-    await tx.put("counter", next);
-  }
+  "put": async (tx: WriteTransaction, args: {key: string, value: string}) => {
+    await tx.put(args.key, args.value);
+  },
+  "del": async (tx: WriteTransaction, args: {key: string}) => {
+    await tx.del(args.key);
+  },
 };
 
 export class DurableReplicache {
@@ -38,13 +33,16 @@ export class DurableReplicache {
         const read = tx.read();
         let mainHash = (await read.getHead("main")) ?? null;
         const commit = await (mainHash ? loadCommit(read, mainHash) : initChain(tx));
+        if (!commit) {
+          throw new Error(`Corrupt database: could not find headHash: ${mainHash}`);
+        }
 
         // Apply requested action.
         try {
           let url = new URL(request.url);
           switch (url.pathname) {
             case "/replicache-pull":
-              return await pull(commit, mainHash, request);
+              return await pull(commit, mainHash, read, request);
             case "/replicache-push":
               return await push(commit, mainHash, request);
           }
@@ -141,21 +139,52 @@ async function push(commit: LoadedCommit, headHash: string|null, request: Reques
   return new Response("OK");
 }
 
-async function pull(commit: LoadedCommit, headHash: string|null, request: Request): Promise<Response> {
+async function pull(commit: LoadedCommit, headHash: string|null, read: Read, request: Request): Promise<Response> {
   const pullRequest = (await request.json()) as PullRequest; // TODO: validate
   const lastMutationID = await getLastMutationID(commit, pullRequest.clientID);
+  const requestCookie = pullRequest.cookie;
+
+  // Load the historical commit
+  let prevMap: ProllyMap|null = null;
+  if (requestCookie !== null) {
+    if (typeof requestCookie !== "string") {
+      return new Response("Invalid cookie", {status: 400});
+    }
+    const prevCommit = await readCommit(read, requestCookie);
+    if (prevCommit) {
+      prevMap = await ProllyMap.load(prevCommit.userDataHash, read);
+    } else {
+      console.warn(`Could not find cookie "${requestCookie}" - sending reset patch`)
+    }
+  }
+
+  const patch = [];
+  if (prevMap === null) {
+    patch.push({op: "clear" as const});
+    patch.push(...[...commit.userData.entries()].map(([key, value]) => ({
+      op: "put" as const,
+      key,
+      value: deepThaw(value),
+    })));
+  } else {
+    for (const [nk, nv] of commit.userData.entries()) {
+      if (!prevMap.has(nk) || prevMap.get(nk) !== nv) {
+        patch.push({op: "put" as const, key: nk, value: deepThaw(nv)});
+      }
+    }
+    for (const [pk] of prevMap.entries()) {
+      if (!commit.userData.has(pk)) {
+        patch.push({op: "del" as const, key: pk});
+      }
+    }
+  }
+
   const pullResonse: PullResponse = {
     cookie: headHash,
     lastMutationID,
-    patch: [
-      { op: "clear" as const },
-      ...[...commit.userData.entries()].map(([key, value]) => ({
-        op: "put" as const,
-        key,
-        value: deepThaw(value),
-      }))
-    ]
+    patch,
   };
+
   return new Response(JSON.stringify(pullResonse), {
     headers: {
       "Content-type": "application/javascript",

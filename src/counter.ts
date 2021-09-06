@@ -2,6 +2,8 @@ import { StoreImpl as KVStore } from "./kv";
 import { Store as DAGStore } from "./replicache/src/dag/store";
 import { Map as ProllyMap } from "./replicache/src/prolly/map";
 import { initHasher } from "./replicache/src/hash";
+import { initChain, readCommit } from "./commit";
+import { Chunk } from "./replicache/src/dag/chunk";
 
 export class CounterTs {
   _store: DAGStore;
@@ -16,7 +18,8 @@ export class CounterTs {
     return await this._store.withWrite(async (tx) => {
       const read = tx.read();
       let mainHash = await read.getHead("main");
-      const map = mainHash ? (await ProllyMap.load(mainHash, read)) : ProllyMap.new();
+      const commit = await (mainHash ? readCommit(read, mainHash) : initChain(tx));
+      const map = await ProllyMap.load(commit.userDataHash, read);
 
       // Apply requested action.
       let url = new URL(request.url);
@@ -37,8 +40,10 @@ export class CounterTs {
       }
 
       if (map.pendingChangedKeys().length !== 0) {
-        mainHash = await map.flush(tx);
-        await tx.setHead("main", mainHash);
+        commit.userDataHash = await map.flush(tx);
+        const chunk = Chunk.new(commit, [...new Set([commit.clientsHash, commit.historyHash, commit.userDataHash])]);
+        await tx.putChunk(chunk);
+        await tx.setHead("main", chunk.hash);
       }
 
       return new Response(current.toString());

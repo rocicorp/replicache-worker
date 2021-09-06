@@ -5,7 +5,7 @@ import { initHasher } from "./replicache/src/hash";
 import { initChain, readCommit } from "./commit";
 import { Chunk } from "./replicache/src/dag/chunk";
 
-export class CounterTs {
+export class DurableReplicache {
   _store: DAGStore;
 
   constructor(state: DurableObjectState, env: Env) {

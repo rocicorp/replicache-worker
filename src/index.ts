@@ -1,8 +1,8 @@
-import isOdd from 'is-odd'
+import isOdd from 'is-odd';
 
 // In order for the workers runtime to find the class that implements
 // our Durable Object namespace, we must export it from the root module.
-export { CounterTs } from './counter'
+export { DurableReplicache } from './durable-replicache';
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -15,8 +15,8 @@ export default {
 }
 
 async function handleRequest(request: Request, env: Env) {
-  let id = env.COUNTER.idFromName('A')
-  let obj = env.COUNTER.get(id)
+  let id = env.DurableReplicache.idFromName('A')
+  let obj = env.DurableReplicache.get(id)
   let resp = await obj.fetch(request.url)
   let count = parseInt(await resp.text())
   let wasOdd = isOdd(count) ? 'is odd' : 'is even'
@@ -25,5 +25,5 @@ async function handleRequest(request: Request, env: Env) {
 }
 
 interface Env {
-  COUNTER: DurableObjectNamespace
+  DurableReplicache: DurableObjectNamespace
 }

@@ -1,5 +1,10 @@
 import { Store, Read, Write, Value } from './replicache/src/kv/store'
 
+// Implements the Replicache kv.Store interface in terms of Durable Objects.
+// This is nice because theoretically, we get the entire Replicache userland
+// API including scan, indexes, etc... for free.
+//
+// In practice, we can't quite get there yet. See comments in TransactionImpl.
 export class StoreImpl implements Store {
   private _state: DurableObjectState
 

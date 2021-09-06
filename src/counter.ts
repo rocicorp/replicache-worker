@@ -7,10 +7,10 @@ export class CounterTs {
     this.state = state;
     // `blockConcurrencyWhile()` ensures no requests are delivered until
     // initialization completes.
-    this.state.blockConcurrencyWhile(async () => {
-        let stored = await this.state.storage.get("value");
-        this.value = stored || 0;
-    })
+    this.state.waitUntil((async () => {
+        let stored = await state.storage.get("value");
+        this.value = (stored || 0) as number;
+    })());
   }
 
   // Handle HTTP requests from clients.

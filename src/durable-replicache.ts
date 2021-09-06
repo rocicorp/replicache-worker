@@ -11,6 +11,7 @@ import { deepThaw, JSONValue } from "./replicache/src/json";
 import { PushRequest } from "./replicache/src/sync/push";
 import { Write } from "./replicache/src/dag/write";
 import { ScanResult } from "./replicache/src/scan-iterator";
+import { PullRequest } from "./replicache/src/sync/pull";
 //import { ScanOptions, KeyTypeForScanOptions } from "./replicache/src/scan-options";
 
 const mutators = {
@@ -34,23 +35,29 @@ export class DurableReplicache {
 
   // Handle HTTP requests from clients.
   async fetch(request: Request) {
-    return await this._store.withWrite(async (tx) => {
-      const read = tx.read();
-      let mainHash = await read.getHead("main");
-      const commit = await (mainHash ? loadCommit(read, mainHash) : initChain(tx));
+    try {
+      return await this._store.withWrite(async (tx) => {
+        const read = tx.read();
+        let mainHash = await read.getHead("main");
+        const commit = await (mainHash ? loadCommit(read, mainHash) : initChain(tx));
 
-      // Apply requested action.
-      let url = new URL(request.url);
-      switch (url.pathname) {
-        case "/replicache-pull":
-          return await pull(commit, read);
-        case "/replicache-push":
-          return await push(commit, tx, request);
-      }
-
-      await flushCommit(tx, commit);
-      return new Response("ok");
-    });
+        // Apply requested action.
+        try {
+          let url = new URL(request.url);
+          switch (url.pathname) {
+            case "/replicache-pull":
+              return await pull(commit, read, request);
+            case "/replicache-push":
+              return await push(commit, tx, request);
+          }
+          return new Response("ok");
+        } finally {
+          await flushCommit(tx, commit);
+        }
+      });
+    } catch (e) {
+      return new Response(e.toString(), { status: 500 });
+    }
   }
 }
 
@@ -132,10 +139,12 @@ async function push(commit: LoadedCommit, write: Write, request: Request): Promi
   return new Response("OK");
 }
 
-async function pull(commit: LoadedCommit, read: Read): Promise<Response> {
+async function pull(commit: LoadedCommit, read: Read, request: Request): Promise<Response> {
+  const pullRequest = (await request.json()) as PullRequest; // TODO: validate
+  const lastMutationID = await getLastMutationID(commit, pullRequest.clientID);
   const pullResonse: PullResponse = {
     cookie: null,
-    lastMutationID: 0,
+    lastMutationID,
     patch: [
       { op: "clear" as const },
       ...[...commit.userData.entries()].map(([key, value]) => ({

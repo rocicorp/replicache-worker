@@ -17,11 +17,7 @@ export default {
 async function handleRequest(request: Request, env: Env) {
   let id = env.DurableReplicache.idFromName('A')
   let obj = env.DurableReplicache.get(id)
-  let resp = await obj.fetch(request.url)
-  let count = parseInt(await resp.text())
-  let wasOdd = isOdd(count) ? 'is odd' : 'is even'
-
-  return new Response(`${count} ${wasOdd}`)
+  return await obj.fetch(request)
 }
 
 interface Env {

@@ -10,7 +10,7 @@ export type LoadedCommit = {
   clientData: ProllyMap;
 }
 
-export type Client = {
+type Client = {
   lastMutationID: number;
 }
 

@@ -105,10 +105,11 @@ export function deepFreeze<T extends JSONValue>(value: T): ReadonlyJSONValue {
       deepFreeze(v);
     }
   } else if (typeof value === 'object' && value !== null) {
-    Object.freeze(value);
-    for (const v of Object.values(value)) {
-      if (v !== undefined) {
-        deepFreeze(v);
+    const v = value as JSONObject;
+    Object.freeze(v);
+    for (const vv of Object.values(v)) {
+      if (vv !== undefined) {
+        deepFreeze(vv);
       }
     }
   }

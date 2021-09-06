@@ -1,45 +1,106 @@
+import { Store, Read, Write, Value } from "./replicache/src/kv/store"
+
+class DurableStore implements Store {
+  private _state: DurableObjectState;
+
+  constructor(state: DurableObjectState) {
+    this._state = state;
+  }
+
+  async withRead<R>(f: (read: Read) => R | Promise<R>): Promise<R> {
+    // TODO: Durable Objects doesn't distinguish between read and write
+    // transactions. Does the fact that it's doing optimistic concurrency
+    // mean that there's no perf difference, or do we need to do something
+    // clever so that reads don't get an exclusive lock.
+    return await this.withWrite(f);
+  }
+
+  async withWrite<R>(f: (write: Write) => R | Promise<R>): Promise<R> {
+    let r: R;
+    await this._state.storage.transaction(async (tx) => {
+      r = await f(new WriteImpl(tx))
+    });
+    return r!;
+  }
+
+  async close(): Promise<void> {
+  }
+
+  async read(): Promise<Read> {
+    // can be implemented with resolvers, but not sure we need it.
+    throw new Error("Method not implemented.");
+  }
+
+  write(): Promise<Write> {
+    throw new Error("Method not implemented.");
+  }
+}
+
+class WriteImpl implements Write {
+  private _tx: DurableObjectTransaction;
+  private _didCommit: boolean;
+
+  constructor(tx: DurableObjectTransaction) {
+    this._tx = tx;
+    this._didCommit = false;
+  }
+
+  async has(key: string): Promise<boolean> {
+    return (await this._tx.get(key)) !== undefined;
+  }
+
+  async get(key: string): Promise<Value | undefined> {
+    return await this._tx.get(key);
+  }
+
+  async put(key: string, value: Value): Promise<void> {
+    await this._tx.put(key, value);
+  }
+
+  async del(key: string): Promise<void> {
+    await this._tx.delete(key);
+  }
+
+  async commit(): Promise<void> {
+    this._didCommit = true;
+  }
+
+  release(): void {
+    if (!this._didCommit) {
+      this._tx.rollback();
+    }
+  }
+}
+
 export class CounterTs {
-  value: number = 0
-  state: DurableObjectState
-  initializePromise: Promise<void> | undefined
+  _store: DurableStore;
 
   constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
-    // `blockConcurrencyWhile()` ensures no requests are delivered until
-    // initialization completes.
-    this.state.waitUntil((async () => {
-        let stored = await state.storage.get("value");
-        this.value = (stored || 0) as number;
-    })());
+    this._store = new DurableStore(state);
   }
 
   // Handle HTTP requests from clients.
   async fetch(request: Request) {
-    // Apply requested action.
-    let url = new URL(request.url);
-    let currentValue = this.value;
-    switch (url.pathname) {
-    case "/increment":
-      currentValue = ++this.value;
-      await this.state.storage.put("value", this.value);
-      break;
-    case "/decrement":
-      currentValue = --this.value;
-      await this.state.storage.put("value", this.value);
-      break;
-    case "/":
-      // Just serve the current value. No storage calls needed!
-      break;
-    default:
-      return new Response("Not found", {status: 404});
-    }
-
-    // Return `currentValue`. Note that `this.value` may have been
-    // incremented or decremented by a concurrent request when we
-    // yielded the event loop to `await` the `storage.put` above!
-    // That's why we stored the counter value created by this
-    // request in `currentValue` before we used `await`.
-    return new Response(currentValue.toString());
+    return await this._store.withWrite(async (tx) => {
+      // Apply requested action.
+      let url = new URL(request.url);
+      let current = ((await tx.get("value")) ?? 0 ) as number;
+      switch (url.pathname) {
+      case "/increment":
+        current += 1;
+        await tx.put("value", current);
+        break;
+      case "/decrement":
+        current -= 1;
+        await tx.put("value", current);
+        break;
+      case "/":
+        break;
+      default:
+        return new Response("Not found", {status: 404});
+      }
+      return new Response(current.toString());
+    });
   }
 }
 

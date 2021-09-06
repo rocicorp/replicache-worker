@@ -1,7 +1,6 @@
 import { StoreImpl as KVStore } from "./kv";
 import { Store as DAGStore } from "./replicache/src/dag/store";
 import { Map as ProllyMap } from "./replicache/src/prolly/map";
-import { initHasher } from "./replicache/src/hash";
 import { flushCommit, getLastMutationID, initChain, loadCommit, LoadedCommit, setLastMutationID } from "./commit";
 //import { MutatorDefs } from "./replicache/src/replicache";
 import { WriteTransaction } from "./replicache/src/transactions";
@@ -27,16 +26,13 @@ const mutators = {
 
 export class DurableReplicache {
   _store: DAGStore;
-  _inited: Promise<unknown>;
 
   constructor(state: DurableObjectState, env: Env) {
     this._store = new DAGStore(new KVStore(state));
-    this._inited = initHasher();
   }
 
   // Handle HTTP requests from clients.
   async fetch(request: Request) {
-    await this._inited;
     try {
       return await this._store.withWrite(async (tx) => {
         const read = tx.read();

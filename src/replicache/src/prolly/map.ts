@@ -95,10 +95,10 @@ class ProllyMap {
 
   async flush(write: dag.Write): Promise<string> {
     const newBase = new Leaf([...this]);
-    await write.putChunk(newBase.chunk);
+    await write.putChunk(await newBase.chunk());
     this._base = newBase;
     this._pending.clear();
-    return this._base.chunk.hash;
+    return (await this._base.chunk()).hash;
   }
 
   static changedKeys(am: ProllyMap, bm: ProllyMap): string[] {

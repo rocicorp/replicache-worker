@@ -20,10 +20,10 @@ export class Chunk {
     this.meta = meta;
   }
 
-  static new(data: Value, refs: string[]): Chunk {
+  static async new(data: Value, refs: string[]): Promise<Chunk> {
     // Use hash of JSON stringified data if a JSONValue is passed.
     const sum = ArrayBuffer.isView(data) ? data : JSON.stringify(data);
-    const hash = Hash.of(sum);
+    const hash = await Hash.of(sum);
     return new Chunk(hash.toString(), data, refs);
   }
 

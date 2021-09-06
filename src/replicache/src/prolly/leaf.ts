@@ -33,9 +33,9 @@ export class Leaf {
     return new Leaf(entries);
   }
 
-  get chunk(): Chunk {
+  async chunk(): Promise<Chunk> {
     if (this._chunk === undefined) {
-      this._chunk = Chunk.new(this.entries, []);
+      this._chunk = await Chunk.new(this.entries, []);
     }
     return this._chunk;
   }

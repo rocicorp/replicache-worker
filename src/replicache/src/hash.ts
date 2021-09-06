@@ -1,6 +1,3 @@
-import {createSHA512} from 'hash-wasm';
-import type {IHasher} from 'hash-wasm/dist/lib/WASMInterface';
-
 export const BYTE_LENGTH = 20;
 
 const charTable = '0123456789abcdefghijklmnopqrstuv';
@@ -17,12 +14,9 @@ export class Hash {
    *
    * You have to await the result of [[initHasher]] before calling this method.
    */
-  static of(sum: Uint8Array | string): Hash {
-    if (!hasher) {
-      throw new Error('Hash.of() requires await initHasher');
-    }
-    const buf = hasher.init().update(sum).digest('binary');
-    return new Hash(buf.subarray(0, BYTE_LENGTH));
+  static async of(sum: Uint8Array | string): Promise<Hash> {
+    const buf = await crypto.subtle.digest('SHA-512', sum instanceof Uint8Array ? sum : new TextEncoder().encode(sum));
+    return new Hash(new Uint8Array(buf, 0, BYTE_LENGTH));
   }
 
   isEmpty(): boolean {
@@ -112,16 +106,4 @@ function decode(encoded: string): Uint8Array {
 function charCodeToNum(cc: number): number {
   // This only accepts the char code for '0' - '9', 'a' - 'v'
   return cc - (cc <= 57 ? 48 : 87); // '9', '0', 'a' - 10
-}
-
-let hasherPromise: Promise<IHasher> | undefined;
-let hasher: IHasher | undefined;
-
-export async function initHasher(): Promise<unknown> {
-  // Creating the Wasm module is async but the actual compuation is sync.
-  if (!hasherPromise) {
-    hasherPromise = createSHA512();
-    hasher = await hasherPromise;
-  }
-  return hasherPromise;
 }

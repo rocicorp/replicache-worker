@@ -54,7 +54,7 @@ export async function setLastMutationID(commit: LoadedCommit, clientID: string, 
 export async function flushCommit(write: Write, commit: LoadedCommit): Promise<void> {
   commit.data.userDataHash = await commit.userData.flush(write);
   commit.data.clientsHash = await commit.clientData.flush(write);
-  const chunk = Chunk.new(commit.data, [...new Set([commit.data.userDataHash, commit.data.clientsHash, commit.data.historyHash])]);
+  const chunk = await Chunk.new(commit.data, [...new Set([commit.data.userDataHash, commit.data.clientsHash, commit.data.historyHash])]);
   await write.putChunk(chunk);
   await write.setHead("main", chunk.hash);
 }
@@ -86,7 +86,7 @@ export async function initChain(write: Write) {
     clientsHash: emptyMapHash,
     historyHash: emptyMapHash,
   };
-  await write.putChunk(Chunk.new(commit, [emptyMapHash]));
+  await write.putChunk(await Chunk.new(commit, [emptyMapHash]));
   const loaded: LoadedCommit = {
     data: commit,
     clientData: map,
